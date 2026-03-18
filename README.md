@@ -59,3 +59,12 @@ src/main/java/com/projetodj/
 │   └── MesaDJService.java
 └── runner/
     └── ConsoleRunner.java
+
+## Equipe
+
+Projeto desenvolvido para fins acadêmicos.
+
+- Pedro Sol
+- Nome do Integrante 2
+- Nome do Integrante 3
+- Nome do Integrante 4
