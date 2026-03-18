@@ -60,11 +60,11 @@ src/main/java/com/projetodj/
 └── runner/
     └── ConsoleRunner.java
 
-## Equipe
+##🧑‍💻Equipe
 
 Projeto desenvolvido para fins acadêmicos.
 
 - Pedro Sol
-- Nome do Integrante 2
-- Nome do Integrante 3
-- Nome do Integrante 4
+- Marcello Augusto
+- Paulo Nery
+- Heitor Didier
