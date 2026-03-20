@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Thread DJ</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        body { font-family: sans-serif; padding: 20px; background: #f0f0f0; }
+        .panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        select, input, button { padding: 10px; margin: 5px; }
+        .stop-btn { background: #ff4444; color: white; border: none; cursor: pointer; }
+        .play-btn { background: #44bb44; color: white; border: none; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="panel">
+        <h2>Thread Control</h2>
+        <select id="folderSelect" onchange="updateFiles()"></select>
+        <select id="fileSelect"></select>
+        <input type="number" id="interval" value="1000" placeholder="ms">
+
+        <button class="play-btn" onclick="createThread()">CREATE THREAD</button>
+        <button class="stop-btn" onclick="killThreads()">KILL ALL THREADS</button>
+    </div>
+
+    <script>
+        let stomp = null;
+        let fileData = {};
+
+        // 1. WebSocket Setup
+        const socket = new SockJS('/ws');
+        stomp = Stomp.over(socket);
+        stomp.connect({}, () => {
+            stomp.subscribe('/topic/sounds', (msg) => new Audio('/sounds/' + msg.body).play());
+            loadFiles();
+        });
+
+        // 2. Load File List
+        function loadFiles() {
+            fetch('/api/files').then(r => r.json()).then(data => {
+                fileData = data;
+                const fSel = document.getElementById('folderSelect');
+                for (let folder in data) {
+                    fSel.innerHTML += `<option value="${folder}">${folder}</option>`;
+                }
+                updateFiles();
+            });
+        }
+
+        function updateFiles() {
+            const folder = document.getElementById('folderSelect').value;
+            const fSel = document.getElementById('fileSelect');
+            fSel.innerHTML = fileData[folder].map(f => `<option value="${f}">${f}</option>`).join('');
+        }
+
+        // 3. Thread Controls
+        function createThread() {
+            stomp.send("/app/play", {}, JSON.stringify({
+                folder: document.getElementById('folderSelect').value,
+                file: document.getElementById('fileSelect').value,
+                interval: document.getElementById('interval').value
+            }));
+        }
+
+        function killThreads() {
+            stomp.send("/app/stop", {}, {});
+        }
+    </script>
+</body>
+</html>
