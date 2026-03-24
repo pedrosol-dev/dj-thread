@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Thread DJ - Toggle Mixer</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.5.1/sockjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #121212; color: #e0e0e0; padding: 20px; }
+        .setup-panel { background: #1e1e1e; padding: 20px; border-radius: 12px; border: 1px solid #333; margin-bottom: 30px; max-width: 400px; }
+        h2 { color: #44bb44; margin-top: 0; }
+
+        .mixer-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 20px; }
+
+        .track-card {
+            background: #252525; padding: 15px; border-radius: 10px;
+            border-left: 5px solid #44bb44; position: relative;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+
+        .track-name { display: block; margin: 10px 0; font-weight: bold; font-size: 1.1em; color: #fff; }
+
+        select, input { background: #333; color: white; border: 1px solid #444; padding: 10px; border-radius: 5px; width: 100%; margin-bottom: 10px; box-sizing: border-box; }
+
+        .controls { display: flex; gap: 8px; margin-top: 10px; }
+        button { cursor: pointer; border: none; border-radius: 5px; font-weight: bold; transition: 0.2s; }
+
+        .add-btn { background: #44bb44; color: white; width: 100%; padding: 12px; }
+
+        /* Estilos Dinâmicos do Botão Toggle */
+        .toggle-btn { flex: 2; padding: 10px; color: white; }
+        .btn-pause { background: #f39c12; } /* Amarelo/Laranja para Pausar */
+        .btn-resume { background: #2980b9; } /* Azul para Retomar */
+
+        .stop-btn { background: #e74c3c; color: white; flex: 1; padding: 10px; }
+
+        button:hover { opacity: 0.8; filter: brightness(1.1); }
+    </style>
+</head>
+<body>
+
+<div class="setup-panel">
+    <h2>🎧 DJ Setup</h2>
+    <label>Categoria:</label>
+    <select id="folderSelect" onchange="updateFiles()"></select>
+
+    <label>Som:</label>
+    <select id="fileSelect"></select>
+
+    <label>Intervalo (ms):</label>
+    <input type="number" id="interval" value="1000" min="100">
+
+    <button class="add-btn" onclick="startNewTrack()">+ ADD TO MIXER</button>
+</div>
+
+<div id="mixer" class="mixer-grid"></div>
+
+<script>
+    let stompClient = null;
+    let fileData = {};
+    const audioPlayers = {};
+    const isPaused = {}; // Objeto para rastrear o estado de cada track (true/false)
+
+    const socket = new SockJS('/ws');
+    stompClient = Stomp.over(socket);
+    stompClient.debug = null;
+
+    stompClient.connect({}, () => {
+        stompClient.subscribe('/topic/sounds', (msg) => {
+            const trackId = msg.body;
+            if (audioPlayers[trackId]) {
+                const audio = audioPlayers[trackId];
+                audio.currentTime = 0;
+                audio.play().catch(() => {});
+            }
+        });
+        loadFiles();
+    });
+
+    function loadFiles() {
+        fetch('/api/files').then(res => res.json()).then(data => {
+            fileData = data;
+            const folderSel = document.getElementById('folderSelect');
+            Object.keys(data).forEach(f => folderSel.innerHTML += `<option value="${f}">${f}</option>`);
+            updateFiles();
+        });
+    }
+
+    function updateFiles() {
+        const folder = document.getElementById('folderSelect').value;
+        const fileSel = document.getElementById('fileSelect');
+        fileSel.innerHTML = fileData[folder].map(f => `<option value="${f}">${f}</option>`).join('');
+    }
+
+    function startNewTrack() {
+        const folder = document.getElementById('folderSelect').value;
+        const file = document.getElementById('fileSelect').value;
+        const interval = document.getElementById('interval').value;
+
+        const trackId = "TRK_" + Date.now();
+        const instrumentPath = folder + "/" + file;
+
+        audioPlayers[trackId] = new Audio('/sounds/' + instrumentPath);
+        isPaused[trackId] = false; // Começa rodando
+
+        stompClient.send("/app/play", {}, JSON.stringify({
+            folder: folder, file: file, interval: interval, trackId: trackId
+        }));
+
+        createTrackCard(trackId, file);
+    }
+
+    // FUNÇÃO DE TOGGLE (Alternar entre Pause e Resume)
+    function toggleTrack(trackId) {
+        const button = document.getElementById('toggle-' + trackId);
+
+        if (isPaused[trackId]) {
+            // Se estava pausado, agora faz RESUME
+            stompClient.send("/app/resume", {}, JSON.stringify({ trackId: trackId }));
+            isPaused[trackId] = false;
+
+            button.innerText = "PAUSE";
+            button.className = "toggle-btn btn-pause";
+        } else {
+            // Se estava rodando, agora faz PAUSE
+            stompClient.send("/app/pause", {}, JSON.stringify({ trackId: trackId }));
+            if (audioPlayers[trackId]) audioPlayers[trackId].pause();
+            isPaused[trackId] = true;
+
+            button.innerText = "RESUME";
+            button.className = "toggle-btn btn-resume";
+        }
+    }
+
+    function stopTrack(trackId) {
+        stompClient.send("/app/stop", {}, JSON.stringify({ trackId: trackId }));
+        if (audioPlayers[trackId]) audioPlayers[trackId].pause();
+
+        delete audioPlayers[trackId];
+        delete isPaused[trackId];
+
+        document.getElementById('card-' + trackId).remove();
+    }
+
+    function createTrackCard(id, name) {
+        const mixer = document.getElementById('mixer');
+        const card = document.createElement('div');
+        card.className = 'track-card';
+        card.id = 'card-' + id;
+
+        card.innerHTML = `
+            <span class="track-name">🎵 ${name}</span>
+            <div class="controls">
+                <button id="toggle-${id}" class="toggle-btn btn-pause" onclick="toggleTrack('${id}')">PAUSE</button>
+                <button class="stop-btn" onclick="stopTrack('${id}')">STOP</button>
+            </div>
+        `;
+        mixer.appendChild(card);
+    }
+</script>
+
+</body>
+</html>
